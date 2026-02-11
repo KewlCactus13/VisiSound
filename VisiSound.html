@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>VisiSound</title>
+<style>
+    * {
+        box-sizing: border-box;
+        font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+        margin: 0;
+        background: #111;
+        color: #b0b0b0;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    .file-btn {
+        display: block;
+        text-align: center;
+        padding: 10px;
+        background: linear-gradient(135deg, #2a2a2a, #222);
+        border: 1px solid #333;
+        color: #b0b0b0;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-bottom: 8px;
+    }
+
+    .file-btn:hover {
+        border-color: #4a90e2;
+        box-shadow: 0 0 10px rgba(74, 144, 226, 0.4);
+    }
+
+    .sidebar {
+        width: 260px;
+        background: #161616;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        border-right: 1px solid #2a2a2a;
+    }
+
+    .section {
+        padding-bottom: 15px;
+        border-bottom: 1px solid #2a2a2a;
+    }
+
+    .section:last-child {
+        border-bottom: none;
+    }
+
+    h3 {
+        margin: 0 0 10px 0;
+        font-size: 14px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 8px;
+        background: #1f1f1f;
+        border: 1px solid #2a2a2a;
+        color: #b0b0b0;
+        border-radius: 8px;
+        outline: none;
+    }
+
+    input[type="number"]:focus {
+        border-color: #4a90e2;
+    }
+
+    button {
+        display: block;
+        text-align: center;
+        padding: 10px;
+        background: linear-gradient(135deg, #2a2a2a, #222);
+        border: 1px solid #333;
+        color: #b0b0b0;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-bottom: 8px;
+    }
+
+    button:hover {
+        border-color: #4a90e2;
+        box-shadow: 0 0 10px rgba(74, 144, 226, 0.4);
+    }
+
+    .main {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    canvas {
+        width: 80%;
+        height: 60%;
+    }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+
+    <div class="section">
+        <h3>Upload</h3>
+        <label for="fileInput" class="file-btn">Choose Audio File</label>
+        <input type="file" id="fileInput" accept="audio/*" hidden>
+        <button id="playBtn">Play</button>
+    </div>
+
+    <div class="section">
+        <h3>Visualizer</h3>
+        <label>Bar Count</label>
+        <input type="number" id="barCount" min="15" max="256" value="32">
+
+        <label>Sensitivity</label>
+        <input type="number" id="sensitivity" min="1" max="5" step="0.1" value="2">
+
+        <label>Smoothing</label>
+        <input type="number" id="smoothing" min="0" max="0.95" step="0.05" value="0.8">
+    </div>
+
+</div>
+
+<div class="main">
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const playBtn = document.getElementById("playBtn");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const barCountSlider = document.getElementById("barCount");
+const sensitivitySlider = document.getElementById("sensitivity");
+const smoothingSlider = document.getElementById("smoothing");
+
+let audioContext;
+let analyser;
+let source;
+let dataArray;
+let audio;
+let animationId;
+
+function resizeCanvas() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+fileInput.addEventListener("change", function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    if (audio) audio.pause();
+
+    audio = new Audio(URL.createObjectURL(file));
+    audio.crossOrigin = "anonymous";
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+
+    source = audioContext.createMediaElementSource(audio);
+    source.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+});
+
+playBtn.addEventListener("click", () => {
+    if (!audio) return;
+
+    if (audio.paused) {
+        audio.play();
+        audioContext.resume();
+        draw();
+        playBtn.textContent = "Pause";
+    } else {
+        audio.pause();
+        cancelAnimationFrame(animationId);
+        playBtn.textContent = "Play";
+    }
+});
+
+function draw() {
+    animationId = requestAnimationFrame(draw);
+
+    analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+    analyser.getByteFrequencyData(dataArray);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const bars = parseInt(barCountSlider.value);
+    const sensitivity = parseFloat(sensitivitySlider.value);
+
+    const step = Math.floor(dataArray.length / bars);
+    const barWidth = canvas.width / bars;
+
+    for (let i = 0; i < bars; i++) {
+        const value = dataArray[i * step] * sensitivity;
+        const height = (value / 255) * canvas.height;
+
+        const x = i * barWidth;
+        const y = canvas.height - height;
+        const width = barWidth - 4;
+        const radius = width / 2;
+
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#4a90e2";
+
+        const gradient = ctx.createLinearGradient(0, y, 0, canvas.height);
+        gradient.addColorStop(0, "#4a90e2");
+        gradient.addColorStop(1, "#2a6fd6");
+
+        ctx.fillStyle = gradient;
+
+        roundRect(ctx, x, y, width, height, radius);
+        ctx.fill();
+    }
+
+    ctx.shadowBlur = 0;
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.lineTo(x, y + height);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+}
+</script>
+
+</body>
+</html>
